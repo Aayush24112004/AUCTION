@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const { nextPlayer, markSold, markUnsold, getAuctionStatus } = require("../controllers/auctionController");
-
+const { placeBid } = require("../controllers/auctionController");
+const { teamOwnerOnly } = require("../middleware/authMiddleware");
 
 const { protect, hostOnly } = require("../middleware/authMiddleware");
 const {
@@ -17,4 +18,5 @@ router.get("/status", protect, getAuctionStatus);
 router.post("/start", protect, hostOnly, startAuction);
 router.post("/end", protect, hostOnly, endAuction);
 router.get("/live", getLiveAuctions);
+router.post("/bid", protect, teamOwnerOnly, placeBid);
 module.exports = router;

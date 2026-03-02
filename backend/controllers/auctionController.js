@@ -75,46 +75,44 @@ exports.markSold = async (req, res) => {
   try {
     const hostId = req.user.id;
 
-    const { currentPlayer } = auctionState.getAuction(hostId);
+    const auction = auctionState.getAuction(hostId);
 
-    if (!currentPlayer) {
+    if (!auction.currentPlayer) {
       return res.status(400).json({ msg: "No active player" });
     }
 
-    const { teamName, amount } = req.body;
+    const teamName = auction.highestBidder;
+    const amount = auction.highestBid;
 
-    const team = await Team.findOne({ hostId, teamName });
+    const team = await Team.findOne({ teamName });
 
     if (!team) {
-      return res.status(404).json({ msg: "Team not found" });
+      return res.status(404).json({ msg: "Winning team not found" });
     }
 
-    if (team.purseRemaining < amount) {
-      return res.status(400).json({ msg: "Not enough purse" });
-    }
-
+    // 🔥 Update player
     const player = await Player.findByIdAndUpdate(
-      currentPlayer._id,
+      auction.currentPlayer._id,
       {
         sold: true,
         soldPrice: amount,
-        soldTo: teamName
+        soldTo: team.teamName
       },
       { new: true }
     );
 
+    // 🔥 Update team squad
+    team.players.push(player._id);
     team.purseRemaining -= amount;
+
     await team.save();
 
-auctionState.clearCurrentPlayer(hostId);
-
-    const io = req.app.get("io");
-    io.to(hostId).emit("playerSold", player);
+    auctionState.endAuction(hostId);
 
     res.json({
       msg: "Player sold",
       player,
-      purseRemaining: team.purseRemaining
+      team
     });
 
   } catch (err) {
@@ -202,4 +200,47 @@ exports.getLiveAuctions = (req, res) => {
     msg: "Live auctions feature not implemented yet",
     auctions
   });
+};
+
+// 🔥 TEAM OWNER PLACES BID
+exports.placeBid = async (req, res) => {
+  try {
+    const hostId = req.body.hostId; // which auction
+    const teamId = req.user.id;     // team owner id
+    const { amount } = req.body;
+
+    const auction = auctionState.getAuction(hostId);
+
+    if (!auction.currentPlayer) {
+      return res.status(400).json({ msg: "No active player" });
+    }
+
+    // 🔴 Bid must be higher
+    if (amount <= auction.highestBid) {
+      return res.status(400).json({ msg: "Bid too low" });
+    }
+
+    // 🔍 Get team
+    const team = await Team.findOne({ ownerId: teamId });
+
+    if (!team) return res.status(404).json({ msg: "Team not found" });
+
+    if (team.purseRemaining < amount) {
+      return res.status(400).json({ msg: "Insufficient purse" });
+    }
+
+    // ✅ Update highest bid
+    auctionState.updateBid(hostId, amount, team.teamName);
+
+    const io = req.app.get("io");
+    io.to(hostId).emit("newBid", {
+      team: team.teamName,
+      amount
+    });
+
+    res.json({ msg: "Bid placed", amount });
+
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
 };

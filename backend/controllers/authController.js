@@ -36,11 +36,15 @@ exports.loginUser = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
+  const token = jwt.sign(
+  {
+    id: user._id,
+    role: user.role,
+    email: user.email   // 🔥 ADD THIS
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "1d" }
+);
 
     // 🍪 Send token in HTTP-only cookie
     res.cookie("token", token, {
@@ -52,10 +56,17 @@ exports.loginUser = async (req, res) => {
 
     res.json({
       msg: "Login successful",
+      token,
       role: user.role,
       name: user.name,
       teamName: user.teamName || null
     });
+
+    req.user = {
+      id: user._id,
+      role: user.role,
+      email: user.email
+    };
 
   } catch (err) {
     res.status(500).json({ msg: "Server error" });
